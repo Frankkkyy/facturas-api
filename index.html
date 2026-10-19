@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facturas API</title>
+<meta name="description" content="API para extraer datos de facturas y tickets españoles a JSON: NIF/CIF, IVA, IRPF y recargo de equivalencia, con validación automática.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body><main>
+<header>
+  <h1>Facturas españolas a JSON, validadas.</h1>
+  <p class="lead">Envía un PDF o una foto de una factura o ticket y recibe NIF/CIF, bases, IVA por tipo, IRPF, recargo de equivalencia y totales. Cada resultado pasa controles automáticos (dígito de control del NIF, cuadre de IVA y totales), así sabes cuándo fiarte y cuándo revisar.</p>
+  <div class="row"><a class="btn" href="#lista">Apuntarme a la lista</a><a class="btn ghost" href="#docs">Documentación</a></div>
+</header>
+
+<h2 id="demo">Pruébalo con un ejemplo</h2>
+<div class="tabs row" id="tabs" role="group" aria-label="Ejemplos"></div>
+<div class="demo" style="margin-top:14px">
+  <div><img id="demo-img" alt="Factura de ejemplo"></div>
+  <div><ul class="checks" id="demo-checks"></ul><pre id="demo-json"></pre></div>
+</div>
+<p class="muted">Facturas ficticias. Resultados reales de nuestro extractor, precalculados.</p>
+
+<h2>Por qué esta API</h2>
+<div class="grid">
+  <div class="card"><b>Hecha para España</b><p class="muted">IVA 21/10/4 %, IRPF, recargo de equivalencia, facturas simplificadas, rectificativas e intracomunitarias.</p></div>
+  <div class="card"><b>Controles incluidos</b><p class="muted">NIF/CIF/NIE con dígito de control, base × tipo = cuota, suma de líneas y total. Si algo no cuadra, <code>needs_review: true</code>.</p></div>
+  <div class="card"><b>Sin mínimos mensuales</b><p class="muted">Paquetes prepago desde 8 €. Sin suscripción, sin contrato, los créditos no caducan.</p></div>
+  <div class="card"><b>Privacidad</b><p class="muted">El documento se borra en cuanto se procesa. Solo guardamos el JSON resultante para que lo descargues.</p></div>
+</div>
+
+<h2 id="lista">Abrimos pronto</h2>
+<div class="card">
+  <p>Estamos dando acceso por orden de lista. Quien se apunte ahora tendrá <b>un 30&nbsp;% de descuento</b> en su primer paquete.</p>
+  <p class="muted">Precio previsto: desde 8&nbsp;€ por 100 documentos, sin suscripción ni mínimos mensuales.</p>
+  <p><a class="btn" id="form-link" href="FORM_URL" target="_blank" rel="noopener">Apuntarme a la lista de espera</a></p>
+  <p class="muted">Un formulario de 1 minuto: tu email, qué herramienta usas (n8n, Make, código propio…) y cuántas facturas procesas al mes.</p>
+</div>
+<h2 id="docs">Documentación</h2>
+<p class="muted">Así funcionará la API:</p>
+<p><b>1. Envía el documento</b> (PDF, PNG, JPEG o WEBP, máx. 10 MB):</p>
+<pre>curl -X POST https://<span class="host"></span>/v1/extract \
+  -H "Authorization: Bearer inv_TU_CLAVE" \
+  -F "file=@factura.pdf"
+
+{"id": "job_8f2c…", "status": "queued", "url": "https://…/v1/jobs/job_8f2c…"}</pre>
+<p><b>2. Recoge el resultado</b> (espera hasta 60 s con <code>?wait=</code>):</p>
+<pre>curl "https://<span class="host"></span>/v1/jobs/job_8f2c…?wait=30" -H "Authorization: Bearer inv_TU_CLAVE"</pre>
+<table>
+  <tr><th>Endpoint</th><th>Descripción</th></tr>
+  <tr><td><code>POST /v1/extract</code></td><td>Encola un documento. 202 con <code>id</code>.</td></tr>
+  <tr><td><code>GET /v1/jobs/{id}</code></td><td><code>status</code>: queued, processing, done o failed. Con <code>done</code> incluye <code>result.invoice</code>, <code>result.checks</code> y <code>result.needs_review</code>.</td></tr>
+  <tr><td><code>GET /v1/account</code></td><td>Créditos restantes y documentos en cola.</td></tr>
+  <tr><td><code>GET /docs</code></td><td>Especificación OpenAPI interactiva.</td></tr>
+</table>
+<p class="muted">Errores: 401 clave inválida · 402 sin créditos · 413 archivo demasiado grande · 415 formato no soportado.</p>
+
+<footer>Facturas API · Los datos extraídos deben revisarse cuando <code>needs_review</code> es verdadero. Este servicio lee facturas; no emite ni envía facturas a la AEAT.</footer>
+</main>
+<script>
+document.querySelectorAll('.host').forEach(e => e.textContent = 'api.ejemplo.es');
+let demo = [];
+function show(i){
+  const d = demo[i];
+  document.querySelectorAll('#tabs button').forEach((b,j)=>b.setAttribute('aria-pressed', j===i));
+  document.getElementById('demo-img').src = d.image;
+  document.getElementById('demo-json').textContent = JSON.stringify(d.response.result.invoice, null, 2);
+  const ul = document.getElementById('demo-checks'); ul.innerHTML = '';
+  d.response.result.checks.forEach(c => { const li = document.createElement('li'); li.textContent = c.field + ': ' + c.message; if(!c.ok) li.className='bad'; ul.appendChild(li); });
+}
+Promise.resolve([
+ {
+  "id": "12",
+  "label": "Factura con recargo de equivalencia (escaneada)",
+  "image": "demo/12.png",
+  "response": {
+   "status": "done",
+   "result": {
+    "invoice": {
+     "document_type": "factura",
+     "invoice_number": "FAC0515",
+     "issue_date": "2026-10-05",
+     "seller": {
+      "name": "Talleres Mecánicos Ebro S.L.",
+      "tax_id": "B52614153",
+      "address": "Calle del Coso 45, 50003 Zaragoza"
+     },
+     "buyer": {
+      "name": "Comercial Ultramarinos Pilar",
+      "tax_id": "44999379V",
+      "address": null
+     },
+     "currency": "EUR",
+     "line_items": [
+      {
+       "description": "Agua mineral 1,5L (caja 6 ud.)",
+       "quantity": 1.0,
+       "unit_price": 748.18,
+       "tax_rate": 10.0,
+       "amount": 748.18
+      },
+      {
+       "description": "Pan de molde integral",
+       "quantity": 5.0,
+       "unit_price": 53.59,
+       "tax_rate": 4.0,
+       "amount": 267.95
+      },
+      {
+       "description": "Aceite de oliva virgen extra 5L",
+       "quantity": 10.0,
+       "unit_price": 766.53,
+       "tax_rate": 10.0,
+       "amount": 7665.3
+      }
+     ],
+     "tax_breakdown": [
+      {
+       "rate": 10.0,
+       "base": 8413.48,
+       "tax_amount": 841.35,
+       "surcharge_rate": 1.4,
+       "surcharge_amount": 117.79
+      },
+      {
+       "rate": 4.0,
+       "base": 267.95,
+       "tax_amount": 10.72,
+       "surcharge_rate": 0.5,
+       "surcharge_amount": 1.34
+      }
+     ],
+     "subtotal": 8681.43,
+     "total_tax": 852.07,
+     "total_surcharge": 119.13,
+     "irpf_rate": null,
+     "irpf_amount": null,
+     "total": 9652.63,
+     "reverse_charge": false
+    },
+    "checks": [
+     {
+      "field": "seller.tax_id",
+      "ok": true,
+      "message": "CIF checksum valid"
+     },
+     {
+      "field": "buyer.tax_id",
+      "ok": true,
+      "message": "DNI checksum valid"
+     },
+     {
+      "field": "tax_breakdown[10.0].tax_amount",
+      "ok": true,
+      "message": "base × 10.0% = 841.35, read 841.35"
+     },
+     {
+      "field": "tax_breakdown[4.0].tax_amount",
+      "ok": true,
+      "message": "base × 4.0% = 10.72, read 10.72"
+     },
+     {
+      "field": "subtotal",
+      "ok": true,
+      "message": "sum of bases 8681.43, read 8681.43"
+     },
+     {
+      "field": "line_items",
+      "ok": true,
+      "message": "sum of lines 8681.43, sum of bases 8681.43"
+     },
+     {
+      "field": "total",
+      "ok": true,
+      "message": "bases + IVA + recargo - IRPF = 9652.63, read 9652.63"
+     }
+    ],
+    "needs_review": false
+   }
+  }
+ },
+ {
+  "id": "08",
+  "label": "Autónomo con retención IRPF 15%",
+  "image": "demo/08.png",
+  "response": {
+   "status": "done",
+   "result": {
+    "invoice": {
+     "document_type": "factura",
+     "invoice_number": "A0132",
+     "issue_date": "2026-02-13",
+     "seller": {
+      "name": "Lucía Fernández Ortega",
+      "tax_id": "X1074176F",
+      "address": "Calle San Vicente 7, 3ºB, 08001 Barcelona"
+     },
+     "buyer": {
+      "name": "Restaurante La Alameda S.L.",
+      "tax_id": "B89373260",
+      "address": null
+     },
+     "currency": "EUR",
+     "line_items": [
+      {
+       "description": "Diseño web corporativo",
+       "quantity": 1.0,
+       "unit_price": 455.14,
+       "tax_rate": 21.0,
+       "amount": 455.14
+      }
+     ],
+     "tax_breakdown": [
+      {
+       "rate": 21.0,
+       "base": 455.14,
+       "tax_amount": 95.58,
+       "surcharge_rate": null,
+       "surcharge_amount": null
+      }
+     ],
+     "subtotal": 455.14,
+     "total_tax": 95.58,
+     "total_surcharge": null,
+     "irpf_rate": 15.0,
+     "irpf_amount": 68.27,
+     "total": 482.45,
+     "reverse_charge": false
+    },
+    "checks": [
+     {
+      "field": "seller.tax_id",
+      "ok": true,
+      "message": "NIE checksum valid"
+     },
+     {
+      "field": "buyer.tax_id",
+      "ok": true,
+      "message": "CIF checksum valid"
+     },
+     {
+      "field": "tax_breakdown[21.0].tax_amount",
+      "ok": true,
+      "message": "base × 21.0% = 95.58, read 95.58"
+     },
+     {
+      "field": "subtotal",
+      "ok": true,
+      "message": "sum of bases 455.14, read 455.14"
+     },
+     {
+      "field": "line_items",
+      "ok": true,
+      "message": "sum of lines 455.14, sum of bases 455.14"
+     },
+     {
+      "field": "total",
+      "ok": true,
+      "message": "bases + IVA + recargo - IRPF = 482.45, read 482.45"
+     },
+     {
+      "field": "irpf_amount",
+      "ok": true,
+      "message": "subtotal × 15.0% = 68.27, read 68.27"
+     }
+    ],
+    "needs_review": false
+   }
+  }
+ },
+ {
+  "id": "15",
+  "label": "Ticket / factura simplificada (escaneado)",
+  "image": "demo/15.png",
+  "response": {
+   "status": "done",
+   "result": {
+    "invoice": {
+     "document_type": "factura_simplificada",
+     "invoice_number": "A0043",
+     "issue_date": "2026-07-09",
+     "seller": {
+      "name": "Cooperativa Agrícola Tierra de Campos",
+      "tax_id": "F92698323",
+      "address": "Ctra. de León km 3, 34005 Palencia"
+     },
+     "buyer": null,
+     "currency": "EUR",
+     "line_items": [
+      {
+       "description": "Agua mineral 1,5L (caja 6 ud.)",
+       "quantity": 12.0,
+       "unit_price": 214.49,
+       "tax_rate": 10.0,
+       "amount": 2573.88
+      },
+      {
+       "description": "Material de oficina",
+       "quantity": 1.0,
+       "unit_price": 236.59,
+       "tax_rate": 21.0,
+       "amount": 236.59
+      },
+      {
+       "description": "Material de oficina",
+       "quantity": 12.0,
+       "unit_price": 541.14,
+       "tax_rate": 21.0,
+       "amount": 6493.68
+      }
+     ],
+     "tax_breakdown": [
+      {
+       "rate": 21.0,
+       "base": 6730.27,
+       "tax_amount": 1413.36,
+       "surcharge_rate": null,
+       "surcharge_amount": null
+      },
+      {
+       "rate": 10.0,
+       "base": 2573.88,
+       "tax_amount": 257.39,
+       "surcharge_rate": null,
+       "surcharge_amount": null
+      }
+     ],
+     "subtotal": 9304.15,
+     "total_tax": 1670.75,
+     "total_surcharge": null,
+     "irpf_rate": null,
+     "irpf_amount": null,
+     "total": 10974.9,
+     "reverse_charge": false
+    },
+    "checks": [
+     {
+      "field": "seller.tax_id",
+      "ok": true,
+      "message": "CIF checksum valid"
+     },
+     {
+      "field": "tax_breakdown[21.0].tax_amount",
+      "ok": true,
+      "message": "base × 21.0% = 1413.36, read 1413.36"
+     },
+     {
+      "field": "tax_breakdown[10.0].tax_amount",
+      "ok": true,
+      "message": "base × 10.0% = 257.39, read 257.39"
+     },
+     {
+      "field": "subtotal",
+      "ok": true,
+      "message": "sum of bases 9304.15, read 9304.15"
+     },
+     {
+      "field": "total",
+      "ok": true,
+      "message": "bases + IVA + recargo - IRPF = 10974.9, read 10974.9"
+     }
+    ],
+    "needs_review": false
+   }
+  }
+ },
+ {
+  "id": "17",
+  "label": "Factura rectificativa",
+  "image": "demo/17.png",
+  "response": {
+   "status": "done",
+   "result": {
+    "invoice": {
+     "document_type": "factura_rectificativa",
+     "invoice_number": "R2026-046",
+     "issue_date": "2026-09-19",
+     "seller": {
+      "name": "Talleres Mecánicos Ebro S.L.",
+      "tax_id": "B64625064",
+      "address": "Calle del Coso 45, 50003 Zaragoza"
+     },
+     "buyer": {
+      "name": "Clínica Dental Sonrisa S.L.",
+      "tax_id": "B31889926",
+      "address": null
+     },
+     "currency": "EUR",
+     "line_items": [
+      {
+       "description": "Servicio de consultoría",
+       "quantity": -10.0,
+       "unit_price": 536.78,
+       "tax_rate": 21.0,
+       "amount": -5367.8
+      }
+     ],
+     "tax_breakdown": [
+      {
+       "rate": 21.0,
+       "base": -5367.8,
+       "tax_amount": -1127.24,
+       "surcharge_rate": null,
+       "surcharge_amount": null
+      }
+     ],
+     "subtotal": -5367.8,
+     "total_tax": -1127.24,
+     "total_surcharge": null,
+     "irpf_rate": null,
+     "irpf_amount": null,
+     "total": -6495.04,
+     "reverse_charge": false
+    },
+    "checks": [
+     {
+      "field": "seller.tax_id",
+      "ok": true,
+      "message": "CIF checksum valid"
+     },
+     {
+      "field": "buyer.tax_id",
+      "ok": true,
+      "message": "CIF checksum valid"
+     },
+     {
+      "field": "tax_breakdown[21.0].tax_amount",
+      "ok": true,
+      "message": "base × 21.0% = -1127.24, read -1127.24"
+     },
+     {
+      "field": "subtotal",
+      "ok": true,
+      "message": "sum of bases -5367.8, read -5367.8"
+     },
+     {
+      "field": "line_items",
+      "ok": true,
+      "message": "sum of lines -5367.8, sum of bases -5367.8"
+     },
+     {
+      "field": "total",
+      "ok": true,
+      "message": "bases + IVA + recargo - IRPF = -6495.04, read -6495.04"
+     }
+    ],
+    "needs_review": false
+   }
+  }
+ }
+]).then(items=>{
+  demo = items; const t = document.getElementById('tabs');
+  items.forEach((d,i)=>{ const b=document.createElement('button'); b.textContent=d.label; b.onclick=()=>show(i); t.appendChild(b); });
+  show(0);
+});
+</script>
+</body></html>
